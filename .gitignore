@@ -46,3 +46,6 @@ runs/
 # IDE
 .vscode/
 .idea/
+
+# Model checkpoints
+/checkpoints/
