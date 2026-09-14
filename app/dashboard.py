@@ -8,13 +8,36 @@ from PIL import Image
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
-VAL_FILE = PROJECT_ROOT / "data" / "processed" / "val.csv"
+VAL_FILE = (
+    PROJECT_ROOT
+    / "data"
+    / "processed"
+    / "val.csv"
+)
 
-OUTPUT_DIR = PROJECT_ROOT / "outputs" / "scene_inference"
+OUTPUT_DIR = (
+    PROJECT_ROOT
+    / "outputs"
+    / "scene_inference"
+)
 
-RISK_DIR = PROJECT_ROOT / "outputs" / "risk"
+RISK_DIR = (
+    PROJECT_ROOT
+    / "outputs"
+    / "risk"
+)
 
-MAP_DIR = PROJECT_ROOT / "outputs" / "damage_maps"
+DAMAGE_MAP_DIR = (
+    PROJECT_ROOT
+    / "outputs"
+    / "damage_maps"
+)
+
+PRIORITY_MAP_DIR = (
+    PROJECT_ROOT
+    / "outputs"
+    / "priority_maps"
+)
 
 
 st.set_page_config(
@@ -97,7 +120,9 @@ def load_scene_risk(scene_id):
 
 
 def get_scene_ids(rows):
-    return sorted({row["scene_id"] for row in rows})
+    return sorted(
+        {row["scene_id"] for row in rows}
+    )
 
 
 def get_scene_info(rows, scene_id):
@@ -142,17 +167,26 @@ def main():
         st.divider()
 
         st.caption("Aegis AI")
-        st.caption("Building-level damage assessment")
+        st.caption(
+            "Building-level damage assessment"
+        )
 
     # ---------------------------------------------------------------
     # Load scene data
     # ---------------------------------------------------------------
 
-    predictions = load_scene_predictions(scene_id)
+    predictions = load_scene_predictions(
+        scene_id
+    )
 
-    risk_results = load_scene_risk(scene_id)
+    risk_results = load_scene_risk(
+        scene_id
+    )
 
-    scene_info = get_scene_info(rows, scene_id)
+    scene_info = get_scene_info(
+        rows,
+        scene_id
+    )
 
     # ---------------------------------------------------------------
     # Inference check
@@ -184,15 +218,18 @@ def main():
     }
 
     correct = 0
-
     confidences = []
 
     for prediction in predictions:
 
-        predicted_class = prediction.get("prediction")
+        predicted_class = prediction.get(
+            "prediction"
+        )
 
         if predicted_class in predicted_counts:
-            predicted_counts[predicted_class] += 1
+            predicted_counts[
+                predicted_class
+            ] += 1
 
         if (
             prediction.get("true_label")
@@ -200,10 +237,17 @@ def main():
         ):
             correct += 1
 
-        confidence = prediction.get("confidence")
+        confidence = prediction.get(
+            "confidence"
+        )
 
-        if isinstance(confidence, (int, float)):
-            confidences.append(float(confidence))
+        if isinstance(
+            confidence,
+            (int, float),
+        ):
+            confidences.append(
+                float(confidence)
+            )
 
     accuracy = (
         correct / prediction_count
@@ -244,7 +288,9 @@ def main():
     with c3:
         st.metric(
             "Predicted damaged",
-            f"{prediction_count - predicted_counts['no-damage']:,}",
+            (
+                f"{prediction_count - predicted_counts['no-damage']:,}"
+            ),
         )
 
     with c4:
@@ -269,7 +315,9 @@ def main():
     ):
         with col:
 
-            count = predicted_counts[class_name]
+            count = predicted_counts[
+                class_name
+            ]
 
             percentage = (
                 count / prediction_count * 100
@@ -299,7 +347,8 @@ def main():
         )
 
         st.code(
-            "python -m src.risk.priority",
+            f"python -m src.risk.priority "
+            f"--scene {scene_id}",
             language="bash",
         )
 
@@ -317,7 +366,9 @@ def main():
             )
 
             if priority in priority_counts:
-                priority_counts[priority] += 1
+                priority_counts[
+                    priority
+                ] += 1
 
         p1, p2, p3, p4 = st.columns(4)
 
@@ -346,20 +397,26 @@ def main():
             )
 
         st.caption(
-            "Priority is a model-based triage score combining "
-            "predicted damage severity and model confidence. "
-            "It is not a calibrated real-world emergency risk score."
+            "Priority is a model-based triage score "
+            "combining predicted damage severity and "
+            "model confidence. It is not a calibrated "
+            "real-world emergency risk score."
         )
 
         # -----------------------------------------------------------
         # Top priority buildings
         # -----------------------------------------------------------
 
-        st.subheader("🔥 Top priority buildings")
+        st.subheader(
+            "🔥 Top priority buildings"
+        )
 
         top_results = sorted(
             risk_results,
-            key=lambda x: x.get("risk_score", 0),
+            key=lambda x: x.get(
+                "risk_score",
+                0,
+            ),
             reverse=True,
         )[:10]
 
@@ -374,9 +431,16 @@ def main():
                         "",
                     )[:12],
 
-                    "Predicted damage": CLASS_LABELS.get(
-                        result.get("prediction"),
-                        result.get("prediction", ""),
+                    "Predicted damage": (
+                        CLASS_LABELS.get(
+                            result.get(
+                                "prediction"
+                            ),
+                            result.get(
+                                "prediction",
+                                "",
+                            ),
+                        )
                     ),
 
                     "Confidence": (
@@ -408,14 +472,19 @@ def main():
 
     st.divider()
 
-    map_path = MAP_DIR / f"{scene_id}_damage_map.png"
+    st.subheader(
+        "🗺️ Building damage map"
+    )
 
-    st.subheader("Building damage map")
+    damage_map_path = (
+        DAMAGE_MAP_DIR
+        / f"{scene_id}_damage_map.png"
+    )
 
-    if map_path.exists():
+    if damage_map_path.exists():
 
         st.image(
-            Image.open(map_path),
+            Image.open(damage_map_path),
             width="stretch",
         )
 
@@ -426,12 +495,60 @@ def main():
         )
 
     # ---------------------------------------------------------------
+    # Response priority map
+    # ---------------------------------------------------------------
+
+    st.divider()
+
+    st.subheader(
+        "🚨 Response priority map"
+    )
+
+    priority_map_path = (
+        PRIORITY_MAP_DIR
+        / f"{scene_id}_priority_map.png"
+    )
+
+    if risk_results is None:
+
+        st.info(
+            "Generate response priority for this scene "
+            "before creating the priority map."
+        )
+
+    elif priority_map_path.exists():
+
+        st.image(
+            Image.open(priority_map_path),
+            width="stretch",
+        )
+
+        st.caption(
+            "Map colors represent model-based response "
+            "priority: Critical, High, Medium, and Low."
+        )
+
+    else:
+
+        st.warning(
+            "Response priority exists, but the priority "
+            "map has not been generated for this scene yet."
+        )
+
+        st.code(
+            f"python -m src.visualization.priority_map",
+            language="bash",
+        )
+
+    # ---------------------------------------------------------------
     # Building-level predictions
     # ---------------------------------------------------------------
 
     st.divider()
 
-    st.subheader("Building-level predictions")
+    st.subheader(
+        "Building-level predictions"
+    )
 
     table_rows = []
 
@@ -449,22 +566,42 @@ def main():
 
     for prediction in predictions:
 
-        uid = prediction.get("uid", "")
+        uid = prediction.get(
+            "uid",
+            "",
+        )
 
-        risk_result = risk_by_uid.get(uid, {})
+        risk_result = risk_by_uid.get(
+            uid,
+            {},
+        )
 
         table_rows.append(
             {
                 "Building ID": uid[:12],
 
-                "True damage": CLASS_LABELS.get(
-                    prediction.get("true_label"),
-                    prediction.get("true_label", ""),
+                "True damage": (
+                    CLASS_LABELS.get(
+                        prediction.get(
+                            "true_label"
+                        ),
+                        prediction.get(
+                            "true_label",
+                            "",
+                        ),
+                    )
                 ),
 
-                "Predicted damage": CLASS_LABELS.get(
-                    prediction.get("prediction"),
-                    prediction.get("prediction", ""),
+                "Predicted damage": (
+                    CLASS_LABELS.get(
+                        prediction.get(
+                            "prediction"
+                        ),
+                        prediction.get(
+                            "prediction",
+                            "",
+                        ),
+                    )
                 ),
 
                 "Confidence": (
