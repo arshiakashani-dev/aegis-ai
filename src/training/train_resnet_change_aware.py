@@ -19,6 +19,7 @@ CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
 CHECKPOINT_PATH = CHECKPOINT_DIR / "best_resnet_change_aware.pt"
 
 
+# Baseline training configuration
 BATCH_SIZE = 16
 NUM_WORKERS = 0
 LEARNING_RATE = 1e-3
@@ -48,18 +49,28 @@ def calculate_metrics(confusion):
     f1 = []
 
     for class_id in range(num_classes):
-        tp = confusion[class_id, class_id]
+        true_positive = confusion[class_id, class_id]
 
         predicted = confusion[:, class_id].sum()
         actual = confusion[class_id, :].sum()
 
-        p = tp / predicted if predicted > 0 else 0.0
-        r = tp / actual if actual > 0 else 0.0
+        p = (
+            true_positive / predicted
+            if predicted > 0
+            else 0.0
+        )
 
-        if p + r > 0:
-            score = 2 * p * r / (p + r)
-        else:
-            score = 0.0
+        r = (
+            true_positive / actual
+            if actual > 0
+            else 0.0
+        )
+
+        score = (
+            2 * p * r / (p + r)
+            if p + r > 0
+            else 0.0
+        )
 
         precision.append(p)
         recall.append(r)
@@ -70,7 +81,14 @@ def calculate_metrics(confusion):
     return precision, recall, f1, macro_f1
 
 
-def run_epoch(model, loader, criterion, optimizer, device, training):
+def run_epoch(
+    model,
+    loader,
+    criterion,
+    optimizer,
+    device,
+    training,
+):
     if training:
         model.train()
     else:
@@ -94,13 +112,20 @@ def run_epoch(model, loader, criterion, optimizer, device, training):
 
         with torch.set_grad_enabled(training):
             outputs = model(images)
-            loss = criterion(outputs, labels)
+
+            loss = criterion(
+                outputs,
+                labels,
+            )
 
             if training:
                 loss.backward()
                 optimizer.step()
 
-        total_loss += loss.item() * labels.size(0)
+        total_loss += (
+            loss.item() * labels.size(0)
+        )
+
         total_samples += labels.size(0)
 
         predictions = outputs.argmax(dim=1)
@@ -109,12 +134,26 @@ def run_epoch(model, loader, criterion, optimizer, device, training):
             labels.detach().cpu(),
             predictions.detach().cpu(),
         ):
-            confusion[true_label, predicted_label] += 1
+            confusion[
+                true_label,
+                predicted_label,
+            ] += 1
 
-    average_loss = total_loss / total_samples
-    accuracy = confusion.diag().sum().item() / total_samples
+    average_loss = (
+        total_loss / total_samples
+    )
 
-    precision, recall, f1, macro_f1 = calculate_metrics(confusion)
+    accuracy = (
+        confusion.diag().sum().item()
+        / total_samples
+    )
+
+    (
+        precision,
+        recall,
+        f1,
+        macro_f1,
+    ) = calculate_metrics(confusion)
 
     return (
         average_loss,
@@ -192,14 +231,42 @@ def main():
     print("Aegis AI - ResNet18 Change-Aware Training")
     print("=" * 50)
 
+    print("Experiment: baseline reproduction")
+
     device = get_device()
+
     print("Device:", device)
 
-    train_dataset = XView2ChangeDataset(TRAIN_MANIFEST)
-    val_dataset = XView2ChangeDataset(VAL_MANIFEST)
+    # ---------------------------------------------------------
+    # Dataset
+    # ---------------------------------------------------------
 
-    print("Training samples:", len(train_dataset))
-    print("Validation samples:", len(val_dataset))
+    train_dataset = XView2ChangeDataset(
+        TRAIN_MANIFEST,
+        augment=False,
+    )
+
+    val_dataset = XView2ChangeDataset(
+        VAL_MANIFEST,
+        augment=False,
+    )
+
+    print(
+        "Training samples:",
+        len(train_dataset),
+    )
+
+    print(
+        "Validation samples:",
+        len(val_dataset),
+    )
+
+    print("Training augmentation: OFF")
+    print("Validation augmentation: OFF")
+
+    # ---------------------------------------------------------
+    # DataLoaders
+    # ---------------------------------------------------------
 
     train_loader = DataLoader(
         train_dataset,
@@ -215,9 +282,14 @@ def main():
         num_workers=NUM_WORKERS,
     )
 
+    # ---------------------------------------------------------
+    # Class weights
+    # ---------------------------------------------------------
+
     class_weights = CLASS_WEIGHTS.to(device)
 
     print("\nClass weights:")
+
     class_names = [
         "no-damage",
         "minor-damage",
@@ -225,13 +297,27 @@ def main():
         "destroyed",
     ]
 
-    for name, weight in zip(class_names, CLASS_WEIGHTS):
-        print(f"  {name:12s} {weight.item():.4f}")
+    for name, weight in zip(
+        class_names,
+        CLASS_WEIGHTS,
+    ):
+        print(
+            f"  {name:12s} "
+            f"{weight.item():.4f}"
+        )
+
+    # ---------------------------------------------------------
+    # Model
+    # ---------------------------------------------------------
 
     model = AegisResNet18ChangeAware(
         num_classes=4,
         pretrained=True,
     ).to(device)
+
+    # ---------------------------------------------------------
+    # Loss + optimizer
+    # ---------------------------------------------------------
 
     criterion = nn.CrossEntropyLoss(
         weight=class_weights,
@@ -242,23 +328,30 @@ def main():
         lr=LEARNING_RATE,
     )
 
+    # ---------------------------------------------------------
+    # Training
+    # ---------------------------------------------------------
+
     best_macro_f1 = -1.0
     best_epoch = -1
 
-    for epoch in range(1, NUM_EPOCHS + 1):
+    for epoch in range(
+        1,
+        NUM_EPOCHS + 1,
+    ):
         train_metrics = run_epoch(
-            model,
-            train_loader,
-            criterion,
-            optimizer,
-            device,
+            model=model,
+            loader=train_loader,
+            criterion=criterion,
+            optimizer=optimizer,
+            device=device,
             training=True,
         )
 
         val_metrics = run_epoch(
-            model,
-            val_loader,
-            criterion,
+            model=model,
+            loader=val_loader,
+            criterion=criterion,
             optimizer=None,
             device=device,
             training=False,
@@ -291,11 +384,27 @@ def main():
                 f"{CHECKPOINT_PATH}"
             )
 
+    # ---------------------------------------------------------
+    # Final result
+    # ---------------------------------------------------------
+
     print("\n" + "=" * 50)
     print("Training complete")
-    print("Best epoch:", best_epoch)
-    print(f"Best validation Macro F1: {best_macro_f1:.4f}")
-    print("Checkpoint:", CHECKPOINT_PATH)
+
+    print(
+        "Best epoch:",
+        best_epoch,
+    )
+
+    print(
+        f"Best validation Macro F1: "
+        f"{best_macro_f1:.4f}"
+    )
+
+    print(
+        "Checkpoint:",
+        CHECKPOINT_PATH,
+    )
 
 
 if __name__ == "__main__":

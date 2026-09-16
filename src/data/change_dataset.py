@@ -1,9 +1,14 @@
 import csv
+import random
+
 from pathlib import Path
 
 import numpy as np
+
 import torch
+
 from PIL import Image
+
 from torch.utils.data import Dataset
 
 
@@ -23,17 +28,24 @@ class XView2ChangeDataset(Dataset):
     XView2 building-level dataset with explicit change representation.
 
     Input channels:
-        0:3  -> Pre-disaster RGB
-        3:6  -> Post-disaster RGB
-        6:9  -> Absolute RGB difference |Pre - Post|
+        0:3 -> Pre-disaster RGB
+        3:6 -> Post-disaster RGB
+        6:9 -> Absolute RGB difference |Pre - Post|
+
+    Training augmentation:
+        - horizontal flip
+        - vertical flip
+        - 90-degree rotation
+
+    Spatial augmentations are applied identically to pre- and
+    post-disaster images to preserve spatial correspondence.
     """
 
-    def __init__(self, manifest_file):
+    def __init__(self, manifest_file, augment=False):
         self.manifest_file = Path(manifest_file)
+        self.augment = augment
 
-        self.split = (
-            self.manifest_file.stem
-        )
+        self.split = self.manifest_file.stem
 
         self.cache_dir = (
             PROJECT_ROOT
@@ -65,9 +77,7 @@ class XView2ChangeDataset(Dataset):
             dtype=np.float32,
         ) / 255.0
 
-        tensor = torch.from_numpy(
-            array
-        )
+        tensor = torch.from_numpy(array)
 
         tensor = tensor.permute(
             2,
@@ -76,6 +86,47 @@ class XView2ChangeDataset(Dataset):
         )
 
         return tensor
+
+    @staticmethod
+    def _apply_spatial_augmentation(
+        pre_image,
+        post_image,
+    ):
+        # Horizontal flip
+        if random.random() < 0.5:
+            pre_image = pre_image.transpose(
+                Image.Transpose.FLIP_LEFT_RIGHT
+            )
+            post_image = post_image.transpose(
+                Image.Transpose.FLIP_LEFT_RIGHT
+            )
+
+        # Vertical flip
+        if random.random() < 0.5:
+            pre_image = pre_image.transpose(
+                Image.Transpose.FLIP_TOP_BOTTOM
+            )
+            post_image = post_image.transpose(
+                Image.Transpose.FLIP_TOP_BOTTOM
+            )
+
+        # Random rotation: 0, 90, 180, or 270 degrees
+        rotation = random.randint(0, 3)
+
+        if rotation:
+            angle = rotation * 90
+
+            pre_image = pre_image.rotate(
+                angle,
+                expand=False,
+            )
+
+            post_image = post_image.rotate(
+                angle,
+                expand=False,
+            )
+
+        return pre_image, post_image
 
     def __getitem__(self, index):
         row = self.rows[index]
@@ -108,35 +159,31 @@ class XView2ChangeDataset(Dataset):
                 post_path
             )
 
-        with Image.open(
-            pre_path
-        ) as image:
-            pre_image = image.convert(
-                "RGB"
+        with Image.open(pre_path) as image:
+            pre_image = image.convert("RGB")
+
+        with Image.open(post_path) as image:
+            post_image = image.convert("RGB")
+
+        if self.augment:
+            (
+                pre_image,
+                post_image,
+            ) = self._apply_spatial_augmentation(
+                pre_image,
+                post_image,
             )
 
-        with Image.open(
-            post_path
-        ) as image:
-            post_image = image.convert(
-                "RGB"
-            )
-
-        pre_tensor = (
-            self._image_to_tensor(
-                pre_image
-            )
+        pre_tensor = self._image_to_tensor(
+            pre_image
         )
 
-        post_tensor = (
-            self._image_to_tensor(
-                post_image
-            )
+        post_tensor = self._image_to_tensor(
+            post_image
         )
 
         difference = torch.abs(
-            pre_tensor
-            - post_tensor
+            pre_tensor - post_tensor
         )
 
         image = torch.cat(
